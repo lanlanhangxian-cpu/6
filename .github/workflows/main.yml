@@ -15,27 +15,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
 
-      - name: 编译内核（自动匹配 defconfig + 强制匹配官方版本）
+      - name: 编译内核（自动适配 defconfig 路径）
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          # 列出所有可用的 defconfig，方便排查
-          echo "=== 所有 defconfig 文件 ==="
-          find arch/arm64/configs/ -name "*_defconfig" -type f
+          # 1. 查找任意位置的 defconfig 文件
+          echo "=== 搜索所有 defconfig 文件 ==="
+          DEFCONFIG=$(find . -name "*_defconfig" -type f | head -1)
 
-          # 自动选取 vendor 目录下的第一个 defconfig
-          DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*_defconfig" -type f | head -1)
           if [ -z "$DEFCONFIG" ]; then
-            # 如果 vendor 下没有，则尝试根目录的
-            DEFCONFIG=$(find arch/arm64/configs/ -maxdepth 1 -name "*_defconfig" -type f | head -1)
+            echo "❌ 错误：未找到任何 defconfig 文件！"
+            exit 1
           fi
-          echo "使用 defconfig: $DEFCONFIG"
-          make $(basename "$DEFCONFIG")
 
-          # 强制 LOCALVERSION 等于官方内核版本后缀，保证模块加载
+          echo "找到 defconfig: $DEFCONFIG"
+
+          # 2. 确保 arch/arm64/configs/ 目录存在，并复制 defconfig 进去
+          mkdir -p arch/arm64/configs
+          cp "$DEFCONFIG" arch/arm64/configs/
+          CFGNAME=$(basename "$DEFCONFIG")
+          echo "配置文件名: $CFGNAME"
+
+          # 3. 使用该 defconfig 生成 .config
+          make "$CFGNAME"
+
+          # 4. 强制内核版本后缀匹配官方（保证 Wi‑Fi 模块可用）
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
           make olddefconfig
+
+          # 5. 正式编译
           make -j$(nproc)
 
       - name: 打包 AnyKernel3（含官方模块）
@@ -45,17 +54,13 @@ jobs:
           # 复制内核镜像（高通平台通常是 Image.gz-dtb）
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
-          # 如果已提前将官方模块放入 official_modules 目录，则一并打包
+          # 如果你已从官方固件提取模块放入 official_modules，则自动打包
           if [ -d "official_modules" ]; then
             cp -r official_modules/* AnyKernel3/modules/
           fi
 
           cd AnyKernel3
-
-          # 设置机型代号为 OPPO K10x (oscar)
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
-
-          # 打包，文件名带时间戳
           zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
       - name: 上传刷机包
