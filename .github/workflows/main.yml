@@ -8,7 +8,7 @@ jobs:
   build:
     name: Compile Kernel
     runs-on: ubuntu-24.04
-    
+
     env:
       OPPO_K10X_RootPath: ${{ github.workspace }}/OPPO_K10X_Source
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -16,15 +16,15 @@ jobs:
     steps:
       - name: Configure Fast APT Mirror
         uses: vegardit/fast-apt-mirror.sh@v1
-        
+
       - name: Make Build Environment
         timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y git wget automake flex lzop bison gperf build-essential zip curl zlib1g-dev libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3 ccache git-lfs gnupg imagemagick libelf-dev libncurses5-dev libsdl1.2-dev gpart fuse2fs e2fsck-static icu-doc rsync adb fastboot libstdc++6 python-is-python3 gcc-aarch64-linux-gnu
           mkdir -p $CCACHE_DIR
-          mkdir -p ${{ env.OPPO_K10X_RootPath }}
-          mkdir -p ${{ env.OPPO_K10X_RootPath }}/kernel
+          mkdir -p $OPPO_K10X_RootPath
+          mkdir -p $OPPO_K10X_RootPath/kernel
           ccache -M 5G
 
       - name: Checkout Kernel Source
@@ -61,19 +61,19 @@ jobs:
 
       - name: Prepare Compiler
         run: |
-          mkdir -p ${{ env.OPPO_K10X_RootPath }}/compiler
-          cd ${{ env.OPPO_K10X_RootPath }}/compiler
-          
+          mkdir -p $OPPO_K10X_RootPath/compiler
+          cd $OPPO_K10X_RootPath/compiler
+
           curl -fL "https://github.com/Rancemxn/android_kernel_oppo_sm6375/releases/download/tool-develop/linux-x86-refs_tags_android-14.0.0_r0.140-clang-r416183b.tar.gz" -o clang-r416183b.tar.gz --connect-timeout 30 --retry 5 --retry-delay 5
           mkdir -p clang-12.0.5
           tar -xzf clang-r416183b.tar.gz -C clang-12.0.5
           rm clang-r416183b.tar.gz
-          
+
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-9.3 aarch64-linux-android-9.3 --depth=1
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9 --depth=1
 
-          mkdir -p ${{ env.OPPO_K10X_RootPath }}/compiler/ccache-bin
-          cd ${{ env.OPPO_K10X_RootPath }}/compiler/ccache-bin
+          mkdir -p $OPPO_K10X_RootPath/compiler/ccache-bin
+          cd $OPPO_K10X_RootPath/compiler/ccache-bin
           ln -sf "$(which ccache)" clang
           ln -sf "$(which ccache)" clang++
           ln -sf "$(which ccache)" aarch64-linux-android-gcc
@@ -87,13 +87,13 @@ jobs:
           mv temp_modules/vendor ./vendor
           rm -rf temp_modules
 
-          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qcacld-3.0 ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/qcacld-3.0
-          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qca-wifi-host-cmn ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/qca-wifi-host-cmn
-          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/fw-api ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/fw-api
-          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/utils ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/utils
-          echo 'source "drivers/staging/qcacld-3.0/Kconfig"' >> ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/Kconfig
-          echo 'obj-$(CONFIG_QCA_CLD_WLAN) += qcacld-3.0/' >> ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/Makefile
-          sed -i 's|WLAN_ROOT := drivers/staging/qcacld-3.0|WLAN_ROOT := $(srctree)/$(src)|g' "${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild"
+          ln -sf $OPPO_K10X_RootPath/vendor/qcom/opensource/wlan/qcacld-3.0 $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/qcacld-3.0
+          ln -sf $OPPO_K10X_RootPath/vendor/qcom/opensource/wlan/qca-wifi-host-cmn $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/qca-wifi-host-cmn
+          ln -sf $OPPO_K10X_RootPath/vendor/qcom/opensource/wlan/fw-api $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/fw-api
+          ln -sf $OPPO_K10X_RootPath/vendor/qcom/opensource/wlan/utils $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/utils
+          echo 'source "drivers/staging/qcacld-3.0/Kconfig"' >> $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/Kconfig
+          echo 'obj-$(CONFIG_QCA_CLD_WLAN) += qcacld-3.0/' >> $OPPO_K10X_RootPath/kernel/msm-5.4/drivers/staging/Makefile
+          sed -i 's|WLAN_ROOT := drivers/staging/qcacld-3.0|WLAN_ROOT := $(srctree)/$(src)|g' "$OPPO_K10X_RootPath/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild"
 
       - name: Integrate ReSukiSU and SUSFS v2.0.0
         working-directory: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4
@@ -127,19 +127,19 @@ jobs:
           done
           rm -rf susfs_patches
 
-          # 3. 修改 sm6375_defconfig 以启用所需功能
+          # 3. 修改 sm6375_defconfig
           DEFCONFIG_PATH="arch/arm64/configs/sm6375_defconfig"
           if [ -f "$DEFCONFIG_PATH" ]; then
             echo 'CONFIG_LOCALVERSION="-qgki-gfe724a477a80"' >> "$DEFCONFIG_PATH"
-            cat <<EOF >> "$DEFCONFIG_PATH"
-CONFIG_KSU=y
-CONFIG_KSU_SUSFS=y
-CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_PATH=y
-CONFIG_KSU_SUSFS_SUS_MOUNT=y
-CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-EOF
+            {
+              echo "CONFIG_KSU=y"
+              echo "CONFIG_KSU_SUSFS=y"
+              echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
+              echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
+              echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
+              echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y"
+              echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y"
+            } >> "$DEFCONFIG_PATH"
           else
             echo "Error: sm6375_defconfig not found"
             exit 1
@@ -155,20 +155,19 @@ EOF
         run: |
           chmod +x build.sh
           ./build.sh
-      
+
       - name: Show Ccache
         if: always()
         run: ccache -s
 
-      # ---------- 新增打包步骤 ----------
+      # ---------- 打包 AnyKernel3 ----------
       - name: Package AnyKernel3
         run: |
-          cd ${{ env.OPPO_K10X_RootPath }}
+          cd $OPPO_K10X_RootPath
           mkdir -p anykernel_zip
           git clone https://github.com/osm0sis/AnyKernel3 anykernel_zip/anykernel
 
-          # 复制内核镜像（优先使用 Image.gz-dtb，否则使用 Image）
-          IMAGE_DIR="${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/arch/arm64/boot"
+          IMAGE_DIR="$OPPO_K10X_RootPath/kernel/msm-5.4/out/arch/arm64/boot"
           if [ -f "$IMAGE_DIR/Image.gz-dtb" ]; then
             cp "$IMAGE_DIR/Image.gz-dtb" anykernel_zip/anykernel/
           elif [ -f "$IMAGE_DIR/Image.gz" ]; then
@@ -180,8 +179,7 @@ EOF
             exit 1
           fi
 
-          # 复制内核模块（保留原目录结构）
-          MODULES_DIR="${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/all_modules"
+          MODULES_DIR="$OPPO_K10X_RootPath/kernel/msm-5.4/out/all_modules"
           if [ -d "$MODULES_DIR" ]; then
             mkdir -p anykernel_zip/anykernel/modules
             cp -r "$MODULES_DIR"/* anykernel_zip/anykernel/modules/
@@ -190,23 +188,19 @@ EOF
             echo "Warning: No modules directory found, skipping..."
           fi
 
-          # 修改 anykernel.sh 设备代号
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel_zip/anykernel/anykernel.sh
 
-          # 打包
           cd anykernel_zip/anykernel
           zip -r9 ../../OPPO_K10x_ReSukiSU_SUSFS-$(date +%Y%m%d-%H%M).zip ./*
           cd ../..
           echo "Package created: $(ls OPPO_K10x_ReSukiSU_SUSFS-*.zip)"
 
-      # 上传最终刷机包
       - name: Upload AnyKernel3 Zip
         uses: actions/upload-artifact@v6
         with:
           name: OPPO_K10x_ReSukiSU_SUSFS_AnyKernel3
           path: ${{ env.OPPO_K10X_RootPath }}/OPPO_K10x_ReSukiSU_SUSFS-*.zip
 
-      # 保留原来的 Image 和模块上传作为调试（可选）
       - name: Upload Artifacts (Image Only)
         uses: actions/upload-artifact@v6
         with:
