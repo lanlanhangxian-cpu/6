@@ -17,6 +17,7 @@ jobs:
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
             https://github.com/oppo-source/android_kernel_oppo_sm6375 kernel
           cd kernel
+          # 从模块仓库拉取 defconfig 和设备树
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
             https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
           mkdir -p arch/arm64/configs
@@ -41,20 +42,38 @@ jobs:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
 
-      - name: 打 SUSFS v2.0.0 补丁（使用预置补丁）
+      - name: 打 SUSFS v2.0.0 补丁（使用仓库内预置补丁）
         run: |
           cd kernel
-          for patch in ../susfs_patches/*.patch; do
+          PATCH_DIR="$GITHUB_WORKSPACE/susfs_patches"
+          if [ ! -d "$PATCH_DIR" ]; then
+            echo "❌ 错误：未找到 susfs_patches 目录，请先下载并放入仓库"
+            exit 1
+          fi
+          for patch in "$PATCH_DIR"/*.patch; do
             echo "=== 应用 $patch ==="
-            git apply --reject --whitespace=fix "$patch" || echo "❌ 补丁应用失败，继续编译"
+            git apply --reject --whitespace=fix "$patch" || echo "❌ 补丁 $patch 应用失败，继续编译"
           done
 
-      - name: 编译内核
+      - name: 编译内核（智能选取 defconfig）
         run: |
           cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          DEFCONFIG=$(find arch/arm64/configs/ -name "*_defconfig" -type f | head -1)
+
+          # 优先查找包含 oscar 的 defconfig
+          DEFCONFIG=$(find arch/arm64/configs/ -name "*oscar*_defconfig" -type f | head -1)
+          # 如果没有，尝试包含 k10x
+          if [ -z "$DEFCONFIG" ]; then
+            DEFCONFIG=$(find arch/arm64/configs/ -name "*k10x*_defconfig" -type f | head -1)
+          fi
+          # 如果还是没有，列出所有可用文件并报错
+          if [ -z "$DEFCONFIG" ]; then
+            echo "❌ 未找到 OPPO K10x 的 defconfig 文件，当前可用列表："
+            find arch/arm64/configs/ -name "*.defconfig" -o -name "*_defconfig" | sort
+            exit 1
+          fi
+
           echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
