@@ -1,70 +1,50 @@
 name: Build K10x ReSukiSU+SUSFS Kernel (5.4.233-qgki)
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 源码（含 ReSukiSU 驱动与 SUSFS 补丁）
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      # 从模块仓库补全 defconfig 和设备树
+      - name: 获取 defconfig 与设备树
+        run: |
+          git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
+            https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
+          mkdir -p arch/arm64/configs
+          cp -r tmp_repo/arch/arm64/configs/* arch/arm64/configs/ 2>/dev/null || true
+          if [ -d tmp_repo/arch/arm64/boot/dts ]; then
+            mkdir -p arch/arm64/boot/dts
+            cp -r tmp_repo/arch/arm64/boot/dts/* arch/arm64/boot/dts/
+          fi
+          rm -rf tmp_repo
 
       - name: 安装依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
 
-      - name: 编译内核（自动适配 defconfig 路径）
+      - name: 编译内核
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-
-          # 1. 查找任意位置的 defconfig 文件
-          echo "=== 搜索所有 defconfig 文件 ==="
-          DEFCONFIG=$(find . -name "*_defconfig" -type f | head -1)
-
-          if [ -z "$DEFCONFIG" ]; then
-            echo "❌ 错误：未找到任何 defconfig 文件！"
-            exit 1
-          fi
-
-          echo "找到 defconfig: $DEFCONFIG"
-
-          # 2. 确保 arch/arm64/configs/ 目录存在，并复制 defconfig 进去
-          mkdir -p arch/arm64/configs
-          cp "$DEFCONFIG" arch/arm64/configs/
-          CFGNAME=$(basename "$DEFCONFIG")
-          echo "配置文件名: $CFGNAME"
-
-          # 3. 使用该 defconfig 生成 .config
-          make "$CFGNAME"
-
-          # 4. 强制内核版本后缀匹配官方（保证 Wi‑Fi 模块可用）
+          DEFCONFIG=$(find arch/arm64/configs/ -name "*_defconfig" -type f | head -1)
+          make $(basename "$DEFCONFIG")
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
           make olddefconfig
-
-          # 5. 正式编译
           make -j$(nproc)
 
-      - name: 打包 AnyKernel3（含官方模块）
+      - name: 打包
         run: |
           git clone https://github.com/osm0sis/AnyKernel3
-
-          # 复制内核镜像（高通平台通常是 Image.gz-dtb）
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
-
-          # 如果你已从官方固件提取模块放入 official_modules，则自动打包
-          if [ -d "official_modules" ]; then
-            cp -r official_modules/* AnyKernel3/modules/
-          fi
-
+          if [ -d "official_modules" ]; then cp -r official_modules/* AnyKernel3/modules/; fi
           cd AnyKernel3
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
           zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
-      - name: 上传刷机包
+      - name: 上传
         uses: actions/upload-artifact@v4
         with:
-          name: K10x_ReSukiSU_SUSFS_Kernel
+          name: K10x_Kernel
           path: K10x_ReSukiSU_SUSFS-v2.0.0-*.zip
