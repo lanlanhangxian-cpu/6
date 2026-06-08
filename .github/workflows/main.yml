@@ -10,7 +10,7 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git
+          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git wget
 
       - name: 获取 OPPO 官方内核源码
         run: |
@@ -42,18 +42,29 @@ jobs:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
 
-      - name: 打 SUSFS v2.0.0 补丁（使用仓库内预置补丁）
+      - name: 下载并应用 SUSFS v2.0.0 补丁（自动）
         run: |
           cd kernel
-          PATCH_DIR="$GITHUB_WORKSPACE/susfs_patches"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "❌ 错误：未找到 susfs_patches 目录，请先下载并放入仓库"
-            exit 1
+          echo "下载 SUSFS 补丁..."
+          mkdir susfs_patches
+          cd susfs_patches
+          # 从 susfs4ksu 仓库的 v2.0.0 分支下载所有 .patch 文件
+          wget -q -nd -r -np -A "*.patch" \
+            "https://raw.githubusercontent.com/simonpunk/susfs4ksu/v2.0.0/patches/"
+          # 如果 wget 递归下载失败，则尝试下载单个已知文件列表
+          if [ ! -f *.patch ]; then
+            echo "递归下载失败，尝试逐个获取..."
+            for f in $(curl -s "https://api.github.com/repos/simonpunk/susfs4ksu/contents/patches?ref=v2.0.0" | grep '"name"' | cut -d '"' -f 4 | grep '.patch$'); do
+              wget -q "https://raw.githubusercontent.com/simonpunk/susfs4ksu/v2.0.0/patches/$f"
+            done
           fi
-          for patch in "$PATCH_DIR"/*.patch; do
+          echo "下载完成。"
+          cd ..
+          for patch in susfs_patches/*.patch; do
             echo "=== 应用 $patch ==="
             git apply --reject --whitespace=fix "$patch" || echo "❌ 补丁 $patch 应用失败，继续编译"
           done
+          rm -rf susfs_patches
 
       - name: 编译内核（智能选取 defconfig）
         run: |
@@ -61,19 +72,13 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          # 优先查找包含 oscar 的 defconfig
           DEFCONFIG=$(find arch/arm64/configs/ -name "*oscar*_defconfig" -type f | head -1)
-          # 如果没有，尝试包含 k10x
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -name "*k10x*_defconfig" -type f | head -1)
           if [ -z "$DEFCONFIG" ]; then
-            DEFCONFIG=$(find arch/arm64/configs/ -name "*k10x*_defconfig" -type f | head -1)
-          fi
-          # 如果还是没有，列出所有可用文件并报错
-          if [ -z "$DEFCONFIG" ]; then
-            echo "❌ 未找到 OPPO K10x 的 defconfig 文件，当前可用列表："
+            echo "❌ 未找到 K10x defconfig，可用列表："
             find arch/arm64/configs/ -name "*.defconfig" -o -name "*_defconfig" | sort
             exit 1
           fi
-
           echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
