@@ -16,21 +16,30 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/Rancemxn/android_kernel_oppo_sm6375 kernel
           cd kernel
-          # 如果仓库没有 defconfig，从模块仓库补充
-          if [ ! -d arch/arm64/configs/vendor ] && [ ! -f arch/arm64/configs/*_defconfig ]; then
-            echo "补充 defconfig 和设备树..."
-            git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
-              https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
-            mkdir -p arch/arm64/configs
-            cp -r tmp_repo/arch/arm64/configs/* arch/arm64/configs/ 2>/dev/null || true
-            if [ -d tmp_repo/arch/arm64/boot/dts ]; then
-              mkdir -p arch/arm64/boot/dts
-              cp -r tmp_repo/arch/arm64/boot/dts/* arch/arm64/boot/dts/
-            fi
-            rm -rf tmp_repo
-          else
-            echo "defconfig 已存在，跳过补充。"
+
+      - name: 修复缺失的内核配置片段（从官方模块仓库补齐 sched_assist 等）
+        run: |
+          cd kernel
+          echo "从官方模块仓库拉取完整 kernel/ 配置片段..."
+          git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
+            https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
+          # 复制缺失的 kernel 目录（如 sched_assist）
+          if [ -d tmp_repo/kernel ]; then
+            cp -r tmp_repo/kernel/* kernel/ 2>/dev/null || true
+            echo "已恢复 kernel/ 下的配置片段"
           fi
+          # 强制覆盖 defconfig（保证使用 K10x 官方配置）
+          if [ -d tmp_repo/arch/arm64/configs ]; then
+            mkdir -p arch/arm64/configs
+            cp -rf tmp_repo/arch/arm64/configs/* arch/arm64/configs/
+            echo "已强制更新 defconfig"
+          fi
+          # 设备树也一起复制
+          if [ -d tmp_repo/arch/arm64/boot/dts ]; then
+            mkdir -p arch/arm64/boot/dts
+            cp -r tmp_repo/arch/arm64/boot/dts/* arch/arm64/boot/dts/
+          fi
+          rm -rf tmp_repo
 
       - name: 集成 ReSukiSU 内核驱动
         run: |
@@ -51,24 +60,26 @@ jobs:
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
 
-      - name: 编译内核（精准定位 K10x defconfig）
+      - name: 编译内核（强制使用 oscar 配置）
         run: |
           cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          echo "=== 搜索 K10x 相关 defconfig ==="
+          echo "=== 可用 defconfig 列表 ==="
+          find arch/arm64/configs/ -name "*_defconfig" -type f | sort
+
+          # 强制使用 vendor 目录下包含 oscar 的配置
           DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*oscar*_defconfig" -type f 2>/dev/null | head -1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*_defconfig" -type f 2>/dev/null | head -1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -maxdepth 1 -name "*oscar*_defconfig" -type f | head -1)
           if [ -z "$DEFCONFIG" ]; then
-            echo "❌ 未找到 OPPO K10x 的 defconfig，当前所有 defconfig 列表："
-            find arch/arm64/configs/ -name "*_defconfig" -type f
+            echo "❌ 未找到 oscar defconfig，请确认 vendor 目录内容："
+            ls arch/arm64/configs/vendor/ 2>/dev/null || echo "vendor 目录不存在"
             exit 1
           fi
-
           echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
+
+          # 设置版本后缀与强制选项
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
           ./scripts/config --enable CONFIG_KSU
           ./scripts/config --enable CONFIG_KSU_SUSFS
@@ -77,6 +88,7 @@ jobs:
           ./scripts/config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
           ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
           ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+
           make olddefconfig
           make -j$(nproc)
 
