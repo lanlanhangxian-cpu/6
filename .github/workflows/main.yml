@@ -10,7 +10,7 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git wget
+          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git wget curl
 
       - name: 获取 OPPO 官方内核源码
         run: |
@@ -42,22 +42,19 @@ jobs:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
 
-      - name: 下载并应用 SUSFS v2.0.0 补丁（自动）
+      - name: 下载并应用 SUSFS v2.0.0 补丁
         run: |
           cd kernel
-          echo "下载 SUSFS 补丁..."
           mkdir susfs_patches
           cd susfs_patches
-          # 从 susfs4ksu 仓库的 v2.0.0 分支下载所有 .patch 文件
-          wget -q -nd -r -np -A "*.patch" \
-            "https://raw.githubusercontent.com/simonpunk/susfs4ksu/v2.0.0/patches/"
-          # 如果 wget 递归下载失败，则尝试下载单个已知文件列表
-          if [ ! -f *.patch ]; then
-            echo "递归下载失败，尝试逐个获取..."
-            for f in $(curl -s "https://api.github.com/repos/simonpunk/susfs4ksu/contents/patches?ref=v2.0.0" | grep '"name"' | cut -d '"' -f 4 | grep '.patch$'); do
-              wget -q "https://raw.githubusercontent.com/simonpunk/susfs4ksu/v2.0.0/patches/$f"
-            done
+          echo "获取补丁文件列表..."
+          curl -s "https://api.github.com/repos/simonpunk/susfs4ksu/contents/patches?ref=v2.0.0" | \
+            grep '"download_url"' | cut -d '"' -f 4 > urls.txt
+          if [ ! -s urls.txt ]; then
+            echo "❌ 无法获取补丁列表"
+            exit 1
           fi
+          wget -q -i urls.txt
           echo "下载完成。"
           cd ..
           for patch in susfs_patches/*.patch; do
