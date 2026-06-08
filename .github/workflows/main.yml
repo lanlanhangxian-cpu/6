@@ -1,39 +1,59 @@
-name: Build K10x ReSukiSU+SUSFS Kernel
-on: workflow_dispatch
+name: Build K10x ReSukiSU+SUSFS Kernel (5.4.233-qgki)
+
+on:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 源码
-        uses: actions/checkout@v3
+      - name: Checkout 源码（含 ReSukiSU 驱动与 SUSFS 补丁）
+        uses: actions/checkout@v4
 
       - name: 安装依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
 
-      - name: 编译内核
+      - name: 编译内核（强制版本匹配官方）
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          make oscar_user_defconfig   # 替换为实际 defconfig
+
+          # 请将下面的 defconfig 换成 arch/arm64/configs/vendor/ 中你确认过的文件名
+          make oscar_user_defconfig
+
+          # 强制 LOCALVERSION 等于官方内核版本后缀
+          ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
+
+          # 同步其他依赖配置
+          make olddefconfig
+
+          # 开始编译，使用所有核心
           make -j$(nproc)
 
-      - name: 打包 AnyKernel3
+      - name: 打包 AnyKernel3（含官方模块）
         run: |
           git clone https://github.com/osm0sis/AnyKernel3
+
+          # 复制内核镜像（高通平台一般是 Image.gz-dtb）
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          # 若准备了官方模块，复制进去（可选）
+
+          # 如果已提前将官方模块放入 official_modules 目录，则一并打包
           if [ -d "official_modules" ]; then
             cp -r official_modules/* AnyKernel3/modules/
           fi
+
           cd AnyKernel3
+
+          # 设置机型代号为 OPPO K10x (oscar)
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
-          zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0.zip ./*
+
+          # 打包
+          zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
       - name: 上传刷机包
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: K10x_ReSukiSU_SUSFS
-          path: K10x_ReSukiSU_SUSFS-v2.0.0.zip
+          name: K10x_ReSukiSU_SUSFS_Kernel
+          path: K10x_ReSukiSU_SUSFS-v2.0.0-*.zip
