@@ -1,16 +1,24 @@
 name: Build K10x ReSukiSU+SUSFS Kernel (5.4.233-qgki)
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # 从模块仓库补全 defconfig 和设备树
-      - name: 获取 defconfig 与设备树
+      - name: 安装依赖
         run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git
+
+      - name: 获取 OPPO 官方内核源码
+        run: |
+          git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
+            https://github.com/oppo-source/android_kernel_oppo_sm6375 kernel
+          cd kernel
+
+          # 从模块仓库拉取 defconfig 和设备树
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
             https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
           mkdir -p arch/arm64/configs
@@ -21,30 +29,58 @@ jobs:
           fi
           rm -rf tmp_repo
 
-      - name: 安装依赖
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
+      - name: 集成 ReSukiSU 内核驱动
+        run: |
+          cd kernel
+          # 下载 ReSukiSU 指定 commit 的内核驱动部分
+          git clone --depth=1 -n https://github.com/ReSukiSU/ReSukiSU re_src
+          cd re_src
+          git fetch origin 27c41151cfcfd37f7db336332c6c573429a656d0
+          git checkout FETCH_HEAD
+          cd ..
+          cp -r re_src/kernel/* drivers/kernelsu/
+          rm -rf re_src
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+
+      - name: 打 SUSFS v2.0.0 补丁
+        run: |
+          cd kernel
+          git clone -b v2.0.0 --depth=1 https://github.com/simonpunk/susfs4ksu susfs_patch
+          # 如果补丁是多个 .patch 文件，使用循环 apply
+          for patch in susfs_patch/patches/*.patch; do
+            git apply "$patch" || echo "警告：补丁 $patch 应用失败，可能需要手动解决"
+          done
+          rm -rf susfs_patch
 
       - name: 编译内核
         run: |
+          cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
+
           DEFCONFIG=$(find arch/arm64/configs/ -name "*_defconfig" -type f | head -1)
+          echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
           make olddefconfig
           make -j$(nproc)
 
-      - name: 打包
+      - name: 打包 AnyKernel3
         run: |
+          cd kernel
           git clone https://github.com/osm0sis/AnyKernel3
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          if [ -d "official_modules" ]; then cp -r official_modules/* AnyKernel3/modules/; fi
+          # 如果准备了官方模块，可将其放入 official_modules 目录
+          if [ -d "$GITHUB_WORKSPACE/official_modules" ]; then
+            cp -r $GITHUB_WORKSPACE/official_modules/* AnyKernel3/modules/
+          fi
           cd AnyKernel3
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
-          zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
+          zip -r9 ../../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
-      - name: 上传
+      - name: 上传成品
         uses: actions/upload-artifact@v4
         with:
-          name: K10x_Kernel
+          name: K10x_ReSukiSU_SUSFS_Kernel
           path: K10x_ReSukiSU_SUSFS-v2.0.0-*.zip
