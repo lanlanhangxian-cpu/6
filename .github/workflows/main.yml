@@ -15,28 +15,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc
 
-      - name: 编译内核（强制版本匹配官方）
+      - name: 编译内核（自动匹配 defconfig + 强制匹配官方版本）
         run: |
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          # 请将下面的 defconfig 换成 arch/arm64/configs/vendor/ 中你确认过的文件名
-          make oscar_user_defconfig
+          # 列出所有可用的 defconfig，方便排查
+          echo "=== 所有 defconfig 文件 ==="
+          find arch/arm64/configs/ -name "*_defconfig" -type f
 
-          # 强制 LOCALVERSION 等于官方内核版本后缀
+          # 自动选取 vendor 目录下的第一个 defconfig
+          DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*_defconfig" -type f | head -1)
+          if [ -z "$DEFCONFIG" ]; then
+            # 如果 vendor 下没有，则尝试根目录的
+            DEFCONFIG=$(find arch/arm64/configs/ -maxdepth 1 -name "*_defconfig" -type f | head -1)
+          fi
+          echo "使用 defconfig: $DEFCONFIG"
+          make $(basename "$DEFCONFIG")
+
+          # 强制 LOCALVERSION 等于官方内核版本后缀，保证模块加载
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
-
-          # 同步其他依赖配置
           make olddefconfig
-
-          # 开始编译，使用所有核心
           make -j$(nproc)
 
       - name: 打包 AnyKernel3（含官方模块）
         run: |
           git clone https://github.com/osm0sis/AnyKernel3
 
-          # 复制内核镜像（高通平台一般是 Image.gz-dtb）
+          # 复制内核镜像（高通平台通常是 Image.gz-dtb）
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
           # 如果已提前将官方模块放入 official_modules 目录，则一并打包
@@ -49,7 +55,7 @@ jobs:
           # 设置机型代号为 OPPO K10x (oscar)
           sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
 
-          # 打包
+          # 打包，文件名带时间戳
           zip -r9 ../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
       - name: 上传刷机包
