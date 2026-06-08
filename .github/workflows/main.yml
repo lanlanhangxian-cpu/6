@@ -17,7 +17,6 @@ jobs:
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
             https://github.com/oppo-source/android_kernel_oppo_sm6375 kernel
           cd kernel
-          # 从模块仓库拉取 defconfig 和设备树
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
             https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
           mkdir -p arch/arm64/configs
@@ -42,15 +41,13 @@ jobs:
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
 
-      - name: 打 SUSFS v2.0.0 补丁
+      - name: 打 SUSFS v2.0.0 补丁（使用预置补丁）
         run: |
           cd kernel
-          git clone -b v2.0.0 --depth=1 https://github.com/simonpunk/susfs4ksu susfs_patch
-          for patch in susfs_patch/patches/*.patch; do
+          for patch in ../susfs_patches/*.patch; do
             echo "=== 应用 $patch ==="
-            git apply --reject --whitespace=fix "$patch" || echo "❌ 补丁 $patch 应用失败（继续编译）"
+            git apply --reject --whitespace=fix "$patch" || echo "❌ 补丁应用失败，继续编译"
           done
-          rm -rf susfs_patch
 
       - name: 编译内核
         run: |
