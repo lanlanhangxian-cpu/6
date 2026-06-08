@@ -1,46 +1,104 @@
-name: Build K10x ReSukiSU+SUSFS (sm6375_defconfig)
+name: Build OPPO K10x Kernel
 
 on:
+  push:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Compile Kernel
+    runs-on: ubuntu-24.04
+    
+    env:
+      OPPO_K10X_RootPath: ${{ github.workspace }}/OPPO_K10X_Source
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
     steps:
-      - name: 安装依赖
+      - name: Configure Fast APT Mirror
+        uses: vegardit/fast-apt-mirror.sh@v1
+        
+      - name: Make Build Environment
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libncurses-dev flex bison bc git
+          sudo apt-get install -y git wget automake flex lzop bison gperf build-essential zip curl zlib1g-dev libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3 ccache git-lfs gnupg imagemagick libelf-dev libncurses5-dev libsdl1.2-dev gpart fuse2fs e2fsck-static icu-doc rsync adb fastboot libstdc++6 python-is-python3 gcc-aarch64-linux-gnu
+          mkdir -p $CCACHE_DIR
+          mkdir -p ${{ env.OPPO_K10X_RootPath }}
+          mkdir -p ${{ env.OPPO_K10X_RootPath }}/kernel
+          ccache -M 5G
 
-      - name: 克隆 Rancemxn 的内核（已包含 SUSFS v2.0.0）
-        run: |
-          git clone --depth=1 https://github.com/Rancemxn/android_kernel_oppo_sm6375 kernel
-          cd kernel
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v6
+        with:
+          repository: Rancemxn/android_kernel_oppo_sm6375
+          path: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4
+          ref: main
+          fetch-depth: 1
+          submodules: false
 
-      - name: 修复缺失的内核配置片段（从官方模块仓库补齐）
-        run: |
-          cd kernel
-          git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
-            https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375 tmp_repo
-          # 恢复缺失的 kernel/ 目录（如 sched_assist）
-          if [ -d tmp_repo/kernel ]; then
-            cp -r tmp_repo/kernel/* kernel/ 2>/dev/null || true
-          fi
-          # 强制覆盖 defconfig（确保 sm6375_defconfig 等存在）
-          if [ -d tmp_repo/arch/arm64/configs ]; then
-            mkdir -p arch/arm64/configs
-            cp -rf tmp_repo/arch/arm64/configs/* arch/arm64/configs/
-          fi
-          # 设备树
-          if [ -d tmp_repo/arch/arm64/boot/dts ]; then
-            mkdir -p arch/arm64/boot/dts
-            cp -r tmp_repo/arch/arm64/boot/dts/* arch/arm64/boot/dts/
-          fi
-          rm -rf tmp_repo
+      - name: Checkout Modules Source
+        uses: actions/checkout@v6
+        with:
+          repository: Rancemxn/android_kernel_modules_and_devicetree_oppo_sm6375
+          path: ${{ env.OPPO_K10X_RootPath }}/temp_modules
+          ref: oppo/sm6375_u_14.0.0_k10x_5g
+          fetch-depth: 1
 
-      - name: 集成 ReSukiSU 内核驱动
+      - name: Checkout Submodules
+        working-directory: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4
         run: |
-          cd kernel
+          git submodule init
+          git submodule update --init --recursive
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ github.ref_name }}-
+            ${{ runner.os }}-ccache-
+
+      - name: Prepare Compiler
+        run: |
+          mkdir -p ${{ env.OPPO_K10X_RootPath }}/compiler
+          cd ${{ env.OPPO_K10X_RootPath }}/compiler
+          
+          curl -fL "https://github.com/Rancemxn/android_kernel_oppo_sm6375/releases/download/tool-develop/linux-x86-refs_tags_android-14.0.0_r0.140-clang-r416183b.tar.gz" -o clang-r416183b.tar.gz --connect-timeout 30 --retry 5 --retry-delay 5
+          mkdir -p clang-12.0.5
+          tar -xzf clang-r416183b.tar.gz -C clang-12.0.5
+          rm clang-r416183b.tar.gz
+          
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-9.3 aarch64-linux-android-9.3 --depth=1
+          git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9 --depth=1
+
+          mkdir -p ${{ env.OPPO_K10X_RootPath }}/compiler/ccache-bin
+          cd ${{ env.OPPO_K10X_RootPath }}/compiler/ccache-bin
+          ln -sf "$(which ccache)" clang
+          ln -sf "$(which ccache)" clang++
+          ln -sf "$(which ccache)" aarch64-linux-android-gcc
+          ln -sf "$(which ccache)" aarch64-linux-android-g++
+          ln -sf "$(which ccache)" arm-linux-androideabi-gcc
+          ln -sf "$(which ccache)" arm-linux-androideabi-g++
+
+      - name: Handle Dependencies
+        working-directory: ${{ env.OPPO_K10X_RootPath }}
+        run: |
+          mv temp_modules/vendor ./vendor
+          rm -rf temp_modules
+
+          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qcacld-3.0 ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/qcacld-3.0
+          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qca-wifi-host-cmn ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/qca-wifi-host-cmn
+          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/fw-api ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/fw-api
+          ln -sf ${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/utils ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/utils
+          echo 'source "drivers/staging/qcacld-3.0/Kconfig"' >> ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/Kconfig
+          echo 'obj-$(CONFIG_QCA_CLD_WLAN) += qcacld-3.0/' >> ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/drivers/staging/Makefile
+          sed -i 's|WLAN_ROOT := drivers/staging/qcacld-3.0|WLAN_ROOT := $(srctree)/$(src)|g' "${{ env.OPPO_K10X_RootPath }}/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild"
+
+      - name: Integrate ReSukiSU and SUSFS v2.0.0
+        working-directory: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4
+        run: |
+          # 1. 集成 ReSukiSU 驱动
           rm -rf drivers/kernelsu
           git clone --depth=1 -n https://github.com/ReSukiSU/ReSukiSU re_src
           cd re_src
@@ -57,41 +115,106 @@ jobs:
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
 
-      - name: 编译内核（使用 sm6375_defconfig）
-        run: |
-          cd kernel
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          # 2. 应用 SUSFS v2.0.0 补丁（自动下载）
+          mkdir susfs_patches
+          cd susfs_patches
+          curl -s "https://api.github.com/repos/simonpunk/susfs4ksu/contents/patches?ref=v2.0.0" | \
+            grep '"download_url"' | cut -d '"' -f 4 > urls.txt
+          wget -q -i urls.txt
+          cd ..
+          for patch in susfs_patches/*.patch; do
+            git apply --reject --whitespace=fix "$patch" || echo "Warning: patch $patch failed"
+          done
+          rm -rf susfs_patches
 
-          echo "使用 defconfig: sm6375_defconfig"
-          make sm6375_defconfig
-
-          ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
-          ./scripts/config --enable CONFIG_KSU
-          ./scripts/config --enable CONFIG_KSU_SUSFS
-          ./scripts/config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-          ./scripts/config --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-          ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-
-          make olddefconfig
-          make -j$(nproc)
-
-      - name: 打包 AnyKernel3
-        run: |
-          cd kernel
-          git clone https://github.com/osm0sis/AnyKernel3
-          cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          if [ -d "$GITHUB_WORKSPACE/official_modules" ]; then
-            cp -r $GITHUB_WORKSPACE/official_modules/* AnyKernel3/modules/
+          # 3. 修改 sm6375_defconfig 以启用所需功能
+          DEFCONFIG_PATH="arch/arm64/configs/sm6375_defconfig"
+          if [ -f "$DEFCONFIG_PATH" ]; then
+            echo 'CONFIG_LOCALVERSION="-qgki-gfe724a477a80"' >> "$DEFCONFIG_PATH"
+            cat <<EOF >> "$DEFCONFIG_PATH"
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+EOF
+          else
+            echo "Error: sm6375_defconfig not found"
+            exit 1
           fi
-          cd AnyKernel3
-          sed -i 's/device.name1=.*/device.name1=oscar/' anykernel.sh
-          zip -r9 ../../K10x_ReSukiSU_SUSFS-v2.0.0-$(date +%Y%m%d-%H%M).zip ./*
 
-      - name: 上传刷机包
-        uses: actions/upload-artifact@v4
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
         with:
-          name: K10x_ReSukiSU_SUSFS_Kernel
-          path: K10x_ReSukiSU_SUSFS-v2.0.0-*.zip
+          swap-size-gb: 12
+
+      - name: Compile Kernel
+        working-directory: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4
+        run: |
+          chmod +x build.sh
+          ./build.sh
+      
+      - name: Show Ccache
+        if: always()
+        run: ccache -s
+
+      # ---------- 新增打包步骤 ----------
+      - name: Package AnyKernel3
+        run: |
+          cd ${{ env.OPPO_K10X_RootPath }}
+          mkdir -p anykernel_zip
+          git clone https://github.com/osm0sis/AnyKernel3 anykernel_zip/anykernel
+
+          # 复制内核镜像（优先使用 Image.gz-dtb，否则使用 Image）
+          IMAGE_DIR="${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/arch/arm64/boot"
+          if [ -f "$IMAGE_DIR/Image.gz-dtb" ]; then
+            cp "$IMAGE_DIR/Image.gz-dtb" anykernel_zip/anykernel/
+          elif [ -f "$IMAGE_DIR/Image.gz" ]; then
+            cp "$IMAGE_DIR/Image.gz" anykernel_zip/anykernel/
+          elif [ -f "$IMAGE_DIR/Image" ]; then
+            cp "$IMAGE_DIR/Image" anykernel_zip/anykernel/
+          else
+            echo "Error: No kernel image found!"
+            exit 1
+          fi
+
+          # 复制内核模块（保留原目录结构）
+          MODULES_DIR="${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/all_modules"
+          if [ -d "$MODULES_DIR" ]; then
+            mkdir -p anykernel_zip/anykernel/modules
+            cp -r "$MODULES_DIR"/* anykernel_zip/anykernel/modules/
+            echo "Modules copied."
+          else
+            echo "Warning: No modules directory found, skipping..."
+          fi
+
+          # 修改 anykernel.sh 设备代号
+          sed -i 's/device.name1=.*/device.name1=oscar/' anykernel_zip/anykernel/anykernel.sh
+
+          # 打包
+          cd anykernel_zip/anykernel
+          zip -r9 ../../OPPO_K10x_ReSukiSU_SUSFS-$(date +%Y%m%d-%H%M).zip ./*
+          cd ../..
+          echo "Package created: $(ls OPPO_K10x_ReSukiSU_SUSFS-*.zip)"
+
+      # 上传最终刷机包
+      - name: Upload AnyKernel3 Zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: OPPO_K10x_ReSukiSU_SUSFS_AnyKernel3
+          path: ${{ env.OPPO_K10X_RootPath }}/OPPO_K10x_ReSukiSU_SUSFS-*.zip
+
+      # 保留原来的 Image 和模块上传作为调试（可选）
+      - name: Upload Artifacts (Image Only)
+        uses: actions/upload-artifact@v6
+        with:
+          name: OPPO_K10x_Kernel_Image
+          path: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/arch/arm64/boot/Image*
+
+      - name: Upload Kernel Modules (Raw)
+        uses: actions/upload-artifact@v6
+        with:
+          name: OPPO_K10x_Kernel_Modules
+          path: ${{ env.OPPO_K10X_RootPath }}/kernel/msm-5.4/out/all_modules/*
