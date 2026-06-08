@@ -51,24 +51,32 @@ jobs:
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
 
-      - name: 编译内核
+      - name: 编译内核（精准定位 K10x defconfig）
         run: |
           cd kernel
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          DEFCONFIG=$(find arch/arm64/configs/ -name "*oscar*_defconfig" -type f 2>/dev/null | head -1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -name "*k10x*_defconfig" -type f | head -1)
-          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -name "*_defconfig" -type f | head -1)
+          echo "=== 搜索 K10x 相关 defconfig ==="
+          DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*oscar*_defconfig" -type f 2>/dev/null | head -1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/vendor/ -name "*_defconfig" -type f 2>/dev/null | head -1)
+          [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -maxdepth 1 -name "*oscar*_defconfig" -type f | head -1)
           if [ -z "$DEFCONFIG" ]; then
-            echo "❌ 未找到任何 defconfig"
+            echo "❌ 未找到 OPPO K10x 的 defconfig，当前所有 defconfig 列表："
+            find arch/arm64/configs/ -name "*_defconfig" -type f
             exit 1
           fi
+
           echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
-
-          # 根据情况决定是否强制 LOCALVERSION（如果不需要可注释或删除）
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
+          ./scripts/config --enable CONFIG_KSU
+          ./scripts/config --enable CONFIG_KSU_SUSFS
+          ./scripts/config --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
+          ./scripts/config --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+          ./scripts/config --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
           make olddefconfig
           make -j$(nproc)
 
