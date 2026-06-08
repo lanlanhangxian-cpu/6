@@ -16,7 +16,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/Rancemxn/android_kernel_oppo_sm6375 kernel
           cd kernel
-          # 如果 Rancemxn 的仓库没有包含 defconfig，仍然从模块仓库拉取
+          # 如果仓库没有 defconfig，从模块仓库补充
           if [ ! -d arch/arm64/configs/vendor ] && [ ! -f arch/arm64/configs/*_defconfig ]; then
             echo "补充 defconfig 和设备树..."
             git clone -b oppo/sm6375_u_14.0.0_k10x_5g --depth=1 \
@@ -35,6 +35,7 @@ jobs:
       - name: 集成 ReSukiSU 内核驱动
         run: |
           cd kernel
+          rm -rf drivers/kernelsu
           git clone --depth=1 -n https://github.com/ReSukiSU/ReSukiSU re_src
           cd re_src
           git fetch origin 27c41151cfcfd37f7db336332c6c573429a656d0
@@ -43,7 +44,6 @@ jobs:
           mkdir -p drivers/kernelsu
           cp -r re_src/kernel/* drivers/kernelsu/
           rm -rf re_src
-          # 确保 Kconfig 和 Makefile 包含 kernelsu 目录（如果已存在则避免重复）
           if ! grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig; then
             echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           fi
@@ -57,7 +57,6 @@ jobs:
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
 
-          # 智能查找 defconfig（优先查找 oscar 或 k10x）
           DEFCONFIG=$(find arch/arm64/configs/ -name "*oscar*_defconfig" -type f 2>/dev/null | head -1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -name "*k10x*_defconfig" -type f | head -1)
           [ -z "$DEFCONFIG" ] && DEFCONFIG=$(find arch/arm64/configs/ -name "*_defconfig" -type f | head -1)
@@ -68,7 +67,7 @@ jobs:
           echo "使用 defconfig: $DEFCONFIG"
           make $(basename "$DEFCONFIG")
 
-          # 强制 LOCALVERSION 与官方一致（如果 Rancemxn 内核已设置则跳过，可手动调整）
+          # 根据情况决定是否强制 LOCALVERSION（如果不需要可注释或删除）
           ./scripts/config --set-str CONFIG_LOCALVERSION "-qgki-gfe724a477a80"
           make olddefconfig
           make -j$(nproc)
@@ -78,7 +77,6 @@ jobs:
           cd kernel
           git clone https://github.com/osm0sis/AnyKernel3
           cp arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          # 如果有预先准备的官方模块，放在仓库根目录 official_modules 下
           if [ -d "$GITHUB_WORKSPACE/official_modules" ]; then
             cp -r $GITHUB_WORKSPACE/official_modules/* AnyKernel3/modules/
           fi
