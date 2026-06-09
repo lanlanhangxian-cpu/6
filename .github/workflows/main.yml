@@ -1,93 +1,28 @@
-name: OPPO K10x Android14 内核编译 + ResukiSU
+name: 调试-查看内核目录&defconfig
 on:
   workflow_dispatch:
     inputs:
       kernel_repo:
-        description: 内核主仓库地址
-        required: true
         default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375.git'
       dt_module_repo:
-        description: 设备树&模块仓库地址
-        required: true
         default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375.git'
       branch_name:
-        description: 统一分支名(双仓库共用)
-        required: true
         default: 'oppo/sm6375_u_14.0.0_k10x_5g'
-      defconfig:
-        description: 内核配置文件
-        required: true
-        default: 'sm6375_defconfig'
 
 jobs:
-  build:
+  debug:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
-    env:
-      ARCH: arm64
-      CROSS_COMPILE: aarch64-linux-gnu-
-
     steps:
-      # 1. 安装依赖
-      - name: 安装系统依赖
+      - name: 克隆主内核
         run: |
-          sudo apt update -y
-          sudo apt install -y git flex bison build-essential zip curl libncurses5-dev \
-          libssl-dev libelf-dev python3 bc rsync lz4 mkbootimg gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
-      # 2. 克隆源码
-      - name: 克隆主内核源码
+          git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} ${{ github.event.inputs.kernel_repo }} kernel
+      - name: 克隆并合并设备树
         run: |
-          git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
-          ${{ github.event.inputs.kernel_repo }} kernel
-
-      - name: 克隆并合并设备树/模块
-        run: |
-          git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
-          ${{ github.event.inputs.dt_module_repo }} kernel_modules
+          git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} ${{ github.event.inputs.dt_module_repo }} kernel_modules
           cp -rf kernel_modules/* kernel/
-
-      # 3. 首次深度清理（仅在最开始执行，只做一次）
-      - name: 初始化深度清理
-        run: make ${{ env.ARCH }} mrproper
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 4. 生成 .config 核心配置文件
-      - name: 加载设备Defconfig
-        run: |
-          make ${{ env.ARCH }} ${{ github.event.inputs.defconfig }}
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 5. 集成 ResukiSU + 关闭AVB校验
-      - name: 集成 ResukiSU
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-          sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/' .config
-          sed -i 's/CONFIG_AVB=y/# CONFIG_AVB is not set/' .config
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 6. 补全配置依赖
-      - name: 补全配置
-        run: make ${{ env.ARCH }} oldconfig
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 7. 正式编译（不再执行 mrproper/clean）
-      - name: 编译内核
-        run: |
-          make -j$(nproc) ${{ env.ARCH }} CROSS_COMPILE=${{ env.CROSS_COMPILE }}
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 8. 打包 boot.img
-      - name: 生成 boot.img
-        run: |
-          mkbootimg --kernel arch/arm64/boot/Image.gz-dtb -o ${{ github.workspace }}/boot.img
-        working-directory: ${{ github.workspace }}/kernel
-
-      # 9. 上传产物
-      - name: 上传编译文件
-        uses: actions/upload-artifact@v4
-        with:
-          name: K10x-A14-ResukiSU-Boot_${{ github.event.inputs.branch_name }}
-          path: |
-            boot.img
-            kernel/arch/arm64/boot/Image.gz-dtb
+      - name: 查看内核根目录
+        run: pwd && ls -la
+        working-directory: ./kernel
+      - name: 查看 arch/arm64/configs 下所有 defconfig
+        run: ls -la arch/arm64/configs/
+        working-directory: ./kernel
