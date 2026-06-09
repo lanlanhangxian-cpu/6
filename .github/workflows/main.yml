@@ -40,50 +40,56 @@ jobs:
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
           ${{ github.event.inputs.kernel_repo }} kernel
-          cd $GITHUB_WORKSPACE/kernel
 
-      # 3. 克隆设备树 & 驱动模块
-      - name: 克隆设备树/模块源码
+      # 3. 克隆设备树 & 驱动模块 + 合并到内核
+      - name: 克隆并合并设备树/模块
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
           ${{ github.event.inputs.dt_module_repo }} kernel_modules
-          # 合并设备树到内核源码(OPPO 标准目录)
-          cp -r kernel_modules/* $GITHUB_WORKSPACE/kernel/
+          cp -rf kernel_modules/* kernel/
 
-      # 4. 集成 ResukiSU (适配 Android14/5.15 内核)
+      # 4. 进入内核目录，初始化编译环境
+      - name: 初始化编译目录
+        run: cd kernel
+        working-directory: ${{ github.workspace }}/kernel
+
+      # 5. 加载默认Defconfig（生成 .config 核心步骤）
+      - name: 加载设备Defconfig
+        run: |
+          make ${{ env.ARCH }} ${{ github.event.inputs.defconfig }}
+        working-directory: ${{ github.workspace }}/kernel
+
+      # 6. 集成 ResukiSU + 开启配置
       - name: 集成 ResukiSU
         run: |
-          cd $GITHUB_WORKSPACE/kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/${{ github.event.inputs.defconfig }}
-
-      # 5. 加载内核配置
-      - name: 加载 defconfig
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          make ${{ env.ARCH }} ${{ github.event.inputs.defconfig }}
           sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/' .config
+          # 可选：关闭AVB校验（ColorOS 14防刷）
+          sed -i 's/CONFIG_AVB=y/# CONFIG_AVB is not set/' .config
+        working-directory: ${{ github.workspace }}/kernel
 
-      # 6. 清理编译缓存
+      # 7. 清理编译缓存
       - name: 清理旧产物
         run: |
-          cd $GITHUB_WORKSPACE/kernel
           make ${{ env.ARCH }} clean
           make ${{ env.ARCH }} mrproper
+          # 重新生成配置
+          make ${{ env.ARCH }} oldconfig
+        working-directory: ${{ github.workspace }}/kernel
 
-      # 7. 正式编译内核
+      # 8. 正式编译内核
       - name: 编译内核
         run: |
-          cd $GITHUB_WORKSPACE/kernel
           make -j$(nproc) ${{ env.ARCH }} CROSS_COMPILE=${{ env.CROSS_COMPILE }}
+        working-directory: ${{ github.workspace }}/kernel
 
-      # 8. 打包 boot.img
+      # 9. 打包 boot.img
       - name: 生成 boot.img
         run: |
-          cd $GITHUB_WORKSPACE/kernel/arch/arm64/boot
-          mkbootimg --kernel Image.gz-dtb -o $GITHUB_WORKSPACE/boot.img
+          mkbootimg --kernel arch/arm64/boot/Image.gz-dtb -o ${{ github.workspace }}/boot.img
+        working-directory: ${{ github.workspace }}/kernel
 
-      # 9. 上传所有产物
+      # 10. 上传所有产物
       - name: 上传编译文件
         uses: actions/upload-artifact@v4
         with:
