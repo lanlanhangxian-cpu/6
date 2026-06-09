@@ -28,68 +28,62 @@ jobs:
       CROSS_COMPILE: aarch64-linux-gnu-
 
     steps:
-      # 1. 安装编译依赖
+      # 1. 安装依赖
       - name: 安装系统依赖
         run: |
           sudo apt update -y
           sudo apt install -y git flex bison build-essential zip curl libncurses5-dev \
           libssl-dev libelf-dev python3 bc rsync lz4 mkbootimg gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      # 2. 克隆主内核源码
+      # 2. 克隆源码
       - name: 克隆主内核源码
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
           ${{ github.event.inputs.kernel_repo }} kernel
 
-      # 3. 克隆设备树 & 驱动模块 + 合并到内核
       - name: 克隆并合并设备树/模块
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.branch_name }} \
           ${{ github.event.inputs.dt_module_repo }} kernel_modules
           cp -rf kernel_modules/* kernel/
 
-      # 4. 进入内核目录，初始化编译环境
-      - name: 初始化编译目录
-        run: cd kernel
+      # 3. 首次深度清理（仅在最开始执行，只做一次）
+      - name: 初始化深度清理
+        run: make ${{ env.ARCH }} mrproper
         working-directory: ${{ github.workspace }}/kernel
 
-      # 5. 加载默认Defconfig（生成 .config 核心步骤）
+      # 4. 生成 .config 核心配置文件
       - name: 加载设备Defconfig
         run: |
           make ${{ env.ARCH }} ${{ github.event.inputs.defconfig }}
         working-directory: ${{ github.workspace }}/kernel
 
-      # 6. 集成 ResukiSU + 开启配置
+      # 5. 集成 ResukiSU + 关闭AVB校验
       - name: 集成 ResukiSU
         run: |
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
           sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/' .config
-          # 可选：关闭AVB校验（ColorOS 14防刷）
           sed -i 's/CONFIG_AVB=y/# CONFIG_AVB is not set/' .config
         working-directory: ${{ github.workspace }}/kernel
 
-      # 7. 清理编译缓存
-      - name: 清理旧产物
-        run: |
-          make ${{ env.ARCH }} clean
-          make ${{ env.ARCH }} mrproper
-          # 重新生成配置
-          make ${{ env.ARCH }} oldconfig
+      # 6. 补全配置依赖
+      - name: 补全配置
+        run: make ${{ env.ARCH }} oldconfig
         working-directory: ${{ github.workspace }}/kernel
 
-      # 8. 正式编译内核
+      # 7. 正式编译（不再执行 mrproper/clean）
       - name: 编译内核
         run: |
           make -j$(nproc) ${{ env.ARCH }} CROSS_COMPILE=${{ env.CROSS_COMPILE }}
         working-directory: ${{ github.workspace }}/kernel
 
-      # 9. 打包 boot.img
+      # 8. 打包 boot.img
       - name: 生成 boot.img
         run: |
           mkbootimg --kernel arch/arm64/boot/Image.gz-dtb -o ${{ github.workspace }}/boot.img
         working-directory: ${{ github.workspace }}/kernel
 
-      # 10. 上传所有产物
+      # 9. 上传产物
       - name: 上传编译文件
         uses: actions/upload-artifact@v4
         with:
