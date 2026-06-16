@@ -1,0 +1,38 @@
+      - name: Load K10x PGGM10 Profile Config
+        run: |
+          # 硬编码写入机型所有配置，无需外部.env文件
+          echo "DEVICE_NAME=OPPO K10x" >> $GITHUB_ENV
+          echo "DEVICE_CODENAME=PGGM10" >> $GITHUB_ENV
+          echo "CLANG_SOURCE=https://github.com/kdrag0n/proton-clang" >> $GITHUB_ENV
+          echo "CLANG_BRANCH=master" >> $GITHUB_ENV
+          echo "GCC_GNU=false" >> $GITHUB_ENV
+          echo "GCC_64_SOURCE=" >> $GITHUB_ENV
+          echo "GCC_64_BRANCH=" >> $GITHUB_ENV
+          echo "GCC_32_SOURCE=" >> $GITHUB_ENV
+          echo "GCC_32_BRANCH=" >> $GITHUB_ENV
+          echo "DEFCONFIG_SOURCE=" >> $GITHUB_ENV
+          echo "DEFCONFIG_NAME=pggm10_defconfig" >> $GITHUB_ENV
+          echo "DEFCONFIG_ORIGIN_IMAGE=" >> $GITHUB_ENV
+          echo "KERNELSU_SOURCE=https://github.com/tiann/KernelSU" >> $GITHUB_ENV
+          echo "KERNELSU_BRANCH=main" >> $GITHUB_ENV
+          echo "KERNELSU_NAME=kernelsu" >> $GITHUB_ENV
+          echo "SUSFS_ENABLE=false" >> $GITHUB_ENV
+          echo "SUSFS_FIXED=false" >> $GITHUB_ENV
+          echo "SUSFS_UPDATE=false" >> $GITHUB_ENV
+          echo "AK3_SOURCE=https://github.com/osm0sis/AnyKernel3" >> $GITHUB_ENV
+          echo "AK3_BRANCH=master" >> $GITHUB_ENV
+          echo "BOOT_SOURCE=./boot.img" >> $GITHUB_ENV
+          echo "LXC_ENABLE=false" >> $GITHUB_ENV
+          echo "HAVE_NO_DTBO=false" >> $GITHUB_ENV
+          echo "HAVE_NO_DTBO_TOOL=false" >> $GITHUB_ENV
+          echo "ROM_TEXT=ColorOS14 SM6375 OPPO K10x PGGM10" >> $GITHUB_ENV
+          echo "CUSTOM_CMDS:" >> $GITHUB_ENV
+          echo "EXTRA_CMDS:" >> $GITHUB_ENV
+
+# 仅当目录存在时才执行移动操作，若不存在则跳过，以避免 mv 命令报错
+
+将 "$GITHUB_WORKSPACE/Patches" 移动到 /tmp/
+
+如果 "$GITHUB_WORKSPACE/Bin" 存在且为目录；
+将 "$GITHUB_WORKSPACE/Bin" 移动到 /tmp/
+          fi
