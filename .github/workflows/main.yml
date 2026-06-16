@@ -1,13 +1,13 @@
-名称: 编译内核 OPPO K10x PGGM10 SM6375 ColorOS14 KSU
-开启:
+name: Build Kernel OPPO K10x PGGM10 SM6375 ColorOS14 KSU
+on:
   workflow_call:
   workflow_dispatch:
 env:
   PYTHON_VERSION: "3"
-打包方法: "Anykernel3"
-内核SU方法: "shell"
-补丁来源: "作者/源代码"
-补丁分支: "main"
+  PACK_METHOD: "Anykernel3"
+  KERNELSU_METHOD: "shell"
+  PATCHES_SOURCE: "author/source"
+  PATCHES_BRANCH: "main"
   HOOK_METHOD: "normal"
   HOOK_OLDER: "false"
   PROFILE_NAME: "PGGM10_cos14_a14.env"
@@ -20,13 +20,10 @@ env:
   BUILD_OTHER_CONFIG: "false"
   FREE_MORE_SPACE: "true"
   REKERNEL_ENABLE: "false"
-  # 官方内核源码
   KERNEL_SOURCE: "https://github.com/oppo-source/android_kernel_oppo_sm6375.git"
   KERNEL_BRANCH: "oppo/sm6375_u_14.0.0_k11x_5g"
-  # 厂商设备树&私有驱动模块仓库
-供应商设备源代码: "https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375.git"
-供应商设备分支: "oppo/sm6375_u_14.0.0_k11x_5g"
-  # OTA固件直链，自动提取boot.img
+  VENDOR_DT_SOURCE: "https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375.git"
+  VENDOR_DT_BRANCH: "oppo/sm6375_u_14.0.0_k11x_5g"
   OTA_ZIP_URL: "https://dfs-serverauto-in.allawnofs.com/dfs/24/01/16/914e7a6c6c274e629b32b173a6124a64.zip"
 
 jobs:
@@ -206,7 +203,7 @@ jobs:
           fi
 
 # 自定义 Clang 工具链
-如果 如果["${{ env.CLANG_SOURCE }}"== *".git"]则; 则
+如果 [[ "${{ env.CLANG_SOURCE }}" == *".git" ]]；则
             git clone ${{ env.CLANG_SOURCE }} -b ${{ env.CLANG_BRANCH }} clang-custom --depth=1
 elif[[ "${{ env.CLANG_SOURCE }}" == *'.tar.gz' ]];
             wget -O clang.tar.gz ${{ env.CLANG_SOURCE }}
